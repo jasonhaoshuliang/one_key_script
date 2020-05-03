@@ -75,10 +75,24 @@ check_dir() {
     fi
 }
 
+install_docker() {
+    # 安装docker
+    yum install -y yum-utils  device-mapper-persistent-data lvm2
+    yum-config-manager  --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    yum install docker-ce docker-ce-cli containerd.io -y
+    docker_v=`yum list docker-ce --showduplicates | sort -r | grep "^docker.*" | head -n 1 | egrep -o "[0-9]*\.[0-9]*\.[0-9]*"`
+    yum install docker-ce-"${docker_v}" docker-ce-cli-"${docker_v}" containerd.io
+    sleep 2
+    systemctl start docker
+    sleep 5
+    docker run hello-world && info "Install docker success."
+
+}
+
 install_com() {
     # 安装组件的函数
     com_name=$1
-    read -t 5 -p "Are you will install ${com_name}, yes or no(default yes):" yes
+    read  -p "Are you will install ${com_name}, yes or no(default yes):" yes
     yes=${yes:-yes}
     if [[ "${yes}"x = "yes"x ]];then
         echo ""
@@ -90,7 +104,7 @@ install_com() {
     if [[ "${com_name}"x = "maven"x ]]; then
         mvn --version > /dev/null 2>&1 && (info "maven exist"; exit 0) || info "maven does not exist."
         # 首先下载maven
-        read -t 5 -p "Input maven workspace(default /app/maven):" dir_maven_dir
+        read  -p "Input maven workspace(default /app/maven):" dir_maven_dir
         dir_maven_dir=${dir_maven_dir:-/app/maven}
         check_dir ${dir_maven_dir}
         wget https://mirrors.tuna.tsinghua.edu.cn/apache/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P ${dir_maven_dir} > /dev/null >&1 && info "Download maven success" || err_exit "Download maven failed"
@@ -102,7 +116,7 @@ install_com() {
         rm -f "${dir_maven_dir}/apache-maven-3.6.3-bin.tar.gz" && info "Delete maven source file success."
     elif [[ "${com_name}"x = "jdk"x ]]; then
         java -version > /dev/null 2>&1 && (info "jdk exist"; exit 0) || info "jdk does not exist."
-        read -t 5 -p "Input jdk workspace(default /app/jdk):" dir_jdk_dir
+        read  -p "Input jdk workspace(default /app/jdk):" dir_jdk_dir
         dir_jdk_dir=${dir_jdk_dir:-/app/jdk}
         check_dir ${dir_jdk_dir}
         wget https://repo.huaweicloud.com/java/jdk/13+33/jdk-13_linux-x64_bin.tar.gz -P ${dir_jdk_dir} > /dev/null >&1 && info "Download jdk success" || err_exit "Download jdk failed"
@@ -114,7 +128,7 @@ install_com() {
         java -version && info "install jdk success" || err_exit "install jdk failed."
         rm -f "${dir_jdk_dir}/jdk-13_linux-x64_bin.tar.gz" && info "Delete jdk source file success."
     elif [[ "${com_name}"x = "tomcat"x ]]; then
-        read -t 5 -p "Input tomcat workspace(default /app/tomcat):" dir_tomcat_dir
+        read  -p "Input tomcat workspace(default /app/tomcat):" dir_tomcat_dir
         dir_tomcat_dir=${dir_tomcat_dir:-/app/tomcat}
         check_dir ${dir_tomcat_dir}
         wget https://mirrors.tuna.tsinghua.edu.cn/apache/tomcat/tomcat-8/v8.5.54/bin/apache-tomcat-8.5.54.tar.gz -P ${dir_tomcat_dir} > /dev/null >&1 && info "Download tomcat success" || err_exit "Download tomcat  failed"
@@ -141,36 +155,44 @@ vm_install() {
 
 docker_install() {
     # 首先判断有没有docker
-    cmd="docker --version"
-    if `eval echo "${cmd}"`;then
-        echo ""
+    docker --version > /dev/null 2>&1
+    if [[ $? -eq 0 ]];then
+        info "You have no docker on this host."
     else
-        err_exit "Your host have not installed docker, please install docker."
+        install_docker
     fi
 
-    read -t 5 -p "Jenkins port (default 80): " jenkins_port
+    read  -p "Jenkins port (default 80): " jenkins_port
     jenkins_port=${jenkins_port:-80}
-    read -t 5 -p "Jenkins JNLP port (default 50000):" jenkins_jnlp_port
+    read  -p "Jenkins JNLP port (default 50000):" jenkins_jnlp_port
     jenkins_jnlp_port=${jenkins_jnlp_port:-50000}
     # 下面是创建jenkins的目录
     while true;
     do
-        read -t  3 -p "Jenkins workspace(default /app/jenkins): " jenkins_work_dir
+        read -p "Jenkins workspace(default /app/jenkins): " jenkins_work_dir
         jenkins_work_dir=${jenkins_work_dir:-/app/jenkins}
-        info "The jenkins workspace is ${jenkins_work_dir}"
         if [[ ! -d  ${jenkins_work_dir} ]]; then
             info "The dir: ${jenkins_work_dir} does not exits. System will create ${jenkins_work_dir}"
-            mkdir -p "${jenkins_work_dir}" || err_exit "Create ${jenkins_work_dir} failed" && info "Create ${jenkins_work_dir} success." && break
+            mkdir -p "${jenkins_work_dir}" || err_exit "Create ${jenkins_work_dir} failed" && info "Create ${jenkins_work_dir} success."
+            chown -R 1000:1000 ${jenkins_work_dir} && infor "Permission added successfully" || error "Permission added failed"
+            if [[ $? -eq 0 ]]; then
+                break;
+            fi
         else
+            num=`ls -A "${jenkins_work_dir}" | wc -w`
+            if [[ ${num} -gt 0 ]]; then
+               info "The dir of ${jenkins_work_dir} is not empty, please input again."
+               continue
+            fi
+            chown -R 1000:1000 ${jenkins_work_dir} && info "Permission added successfully" || error "Permission added failed"
             info "The dir ${jenkins_work_dir} exists." && break
         fi
     done
 
     # 查看名字是否重复
-    cmd='sudo docker ps -a --format "{{.Names}}" | grep -w jenkins'
-    info "[Command]: ${cmd}"
-    if `eval echo "${cmd}"`; then
-        jenkins_container_name=`tr -cd '[:alnum:]' </dev/urandom | head -c 6`
+    docker ps -a --format "{{.Names}}" | grep -w jenkins
+    if [[ $? -eq 0 ]]; then
+        jenkins_container_name="jenkins_`tr -cd '[:alnum:]' </dev/urandom | head -c 6`"
     else
         jenkins_container_name="jenkins"
     fi
@@ -191,15 +213,30 @@ docker_install() {
         err_exit "Input wrong."
     fi
 
-    cmd="docker run --rm -d -p ${jenkins_port}:8080 -p ${jenkins_jnlp_port}:50000 -v ${jenkins_work_dir}:/var/jenkins_home -v /etc/localtime:/etc/localtime --name jenkins_container_name jenkins:2.60.3"
+    cmd="docker run --rm -d -p ${jenkins_port}:8080 -p ${jenkins_jnlp_port}:50000 -v '${jenkins_work_dir}':/var/jenkins_home -v /etc/localtime:/etc/localtime --name '${jenkins_container_name}' jenkins:2.60.3"
     info "[Command]: ${cmd}"
     if `eval echo "${cmd}"`; then
         info "Jenkins docker start success."
         info "Url is 127.0.0.1:${jenkins_port}"
+        loop=0
+        while true; do
+            if [[ -f "${jenkins_work_dir}/secrets/initialAdminPassword" ]]; then
+                admin_password=`cat ${jenkins_work_dir}/secrets/initialAdminPassword`
+                info "The password of admin: ${admin_password}" && break
+            else
+                sleep 1
+            fi
+            ((loop++))
+            if [[ "${loop}" -gt 20 ]]; then
+                if [[ ! -n ${admin_password} ]]; then
+                    error "Can not get admin password."
+                fi
+                break
+            fi
+        done
     else
         error "Jenkins docker start failed."
     fi
-
 }
 
 basic_check() {
