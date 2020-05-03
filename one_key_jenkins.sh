@@ -174,7 +174,7 @@ docker_install() {
         if [[ ! -d  ${jenkins_work_dir} ]]; then
             info "The dir: ${jenkins_work_dir} does not exits. System will create ${jenkins_work_dir}"
             mkdir -p "${jenkins_work_dir}" || err_exit "Create ${jenkins_work_dir} failed" && info "Create ${jenkins_work_dir} success."
-            chown -R 1000:1000 ${jenkins_work_dir} && infor "Permission added successfully" || error "Permission added failed"
+            chown -R 1000:1000 ${jenkins_work_dir} && info "Permission added successfully" || error "Permission added failed"
             if [[ $? -eq 0 ]]; then
                 break;
             fi
