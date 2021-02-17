@@ -212,8 +212,9 @@ docker_install() {
     else
         err_exit "Input wrong."
     fi
+	
 
-    cmd="docker run --rm -d -p ${jenkins_port}:8080 -p ${jenkins_jnlp_port}:50000 -v '${jenkins_work_dir}':/var/jenkins_home -v /etc/localtime:/etc/localtime --name '${jenkins_container_name}' jenkins:2.60.3"
+    cmd="docker run --restart=always -d -p ${jenkins_port}:8080 -p ${jenkins_jnlp_port}:50000 -v '${jenkins_work_dir}':/var/jenkins_home -v /etc/timezone:/etc/timezone -v /etc/localtime:/etc/localtime --name '${jenkins_container_name}' jenkins:2.60.3"
     info "[Command]: ${cmd}"
     if `eval echo "${cmd}"`; then
         info "Jenkins docker start success."
